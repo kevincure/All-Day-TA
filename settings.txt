@@ -1,0 +1,8 @@
+classname=Creative Destruction Lab (CDL) Intro
+professor=Joshua Gans and Alberto Galasso
+assistantname=CDL Virtual Teaching Assistant
+assistants=the teaching assistants (TAs) Ronald and Eugenia and the course manager/Program Coordinator Melika
+classdescription=a Summer 2023 graduate course in entrepreneurship at the Rotman School of Management
+instructions=I am an experimental virtual TA for your course in entrepreneurship.  I have been trained with all of your readings, course materials, lecture content, and slides. I am generally truthful, but be aware that there is a large language model in the background and hallucinations are possible. The more precise your question, the better an answer you will get. You may ask me questions in the language of your choice.  If "an error occurs while processing", ask your question again: the servers we use to process these answers are also in beta.
+num_chunks=8
+filedirectory=Documents

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville&display=swap" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> {{ assistant_name }} </title>
+
+<style>
+body {
+    background-color: #f5eae1;
+    margin: 0;
+    font-family: 'Libre Baskerville', serif;
+}
+
+.text-1 {
+    font-size: 14pt;
+}
+
+.text-2 {
+    font-size: 10pt;
+}
+
+.text-2 #moreinfo {
+    display: none;
+}
+
+.header-container {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px;
+    width: 75%;
+    margin: 0 auto;
+}
+
+header {
+    display: flex;
+    align-items: center;
+}
+
+h1 {
+    margin: 0;
+    color: rgb(236, 4, 123);
+}
+
+.main-container {
+    display: flex;
+    justify-content: center;
+    width: 75%;
+    margin: 0 auto;
+}
+
+.container {
+    width: 30%;
+    text-align: left;
+}
+
+.responses {
+    width: 65%;
+    margin: 0 auto;
+}
+
+/* Add a media query for mobile devices */
+@media screen and (max-width: 768px) {
+    .main-container {
+        flex-direction: column;
+        align-items: center;
+        width: 95%;
+        padding: 10px;
+    }
+
+    .container,
+    .responses {
+        width: 100%;
+    }
+
+
+.header-container {
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    width: 95%;
+}
+
+</style>
+</head>
+
+<body>
+    <div class="header-container">
+        <header>
+            <h1>{{ assistant_name }} </h1>
+        </header>
+    </div>
+    <div class="main-container">
+        <div class="container">
+            <form id="my-form-1" method="post" data-target="response">
+		<div style="display: flex; flex-direction: row;">
+    			<textarea id="input-box" class="input-box" name="content1" placeholder="Type query here." width="100%" rows="15" style="flex: 1; font-size: 20pt; border: none; outline: none; resize: none; background-color: rgb(248, 248, 248);"></textarea>
+			<input type="hidden" id="hiddenContent2" name="content2">
+		</div>
+		<p>
+            </form>
+	</div>
+	<div class="responses">
+	    <span id="processing-message" style="display: none; margin-bottom: 10px; font-size: 16pt; font-weight: bold; font-style: normal;"></span>
+	    <div class="text-1" id="response">  </div>
+            <p></p><p>&nbsp;</p>
+            <div class="text-2" id="previous-response"><b>Instructions: </b>{{ instruct }}	    </div>
+	</div>
+    </div>
+    <script>
+        $(document).ready(function() {
+	    var respondtoquestion="";
+	    $('#input-box').keydown(function(event) {
+                if (event.keyCode === 13) { // 13 is the code for "Enter" key
+                    event.preventDefault();
+                    var target = $('#my-form-1').data('target');
+                    var inputText = $('#input-box').val().trim();
+                    var formData = '';
+		    // Get the HTML content of the 'response' div
+		    var oldQuestionHTML = $('#response').html().trim();
+		    // Replace the <i> tag with the desired text
+		    oldQuestionHTML = oldQuestionHTML.replace('<i>', '');
+		    oldQuestionHTML = oldQuestionHTML.replace('</p><p>', '');
+		    oldQuestionHTML = oldQuestionHTML.replace('<span style="display:none">', ' The TRUE answer follows: ');
+		    oldQuestionHTML = oldQuestionHTML.replace('</span>', '');
+		    // Replace the </i><br> tag with the desired text
+		    oldQuestionHTML = oldQuestionHTML.replace('</i><br>', '');
+		    if (oldQuestionHTML.indexOf('<span') > -1) {
+    		        // Remove content after the <span> tag
+    	                oldQuestionHTML = oldQuestionHTML.split('<span style="float')[0];
+		    }
+	            document.getElementById('hiddenContent2').value = oldQuestionHTML;
+
+		        if (respondtoquestion=="y") {
+                            var query = $('#input-box').val();
+			    respondtoquestion="";
+			    var combinedText = "a: " + "The original question was " + oldQuestionHTML + ' My response to this question is: ' + query + ". Am I correct?  If not, explain why."
+                            formData = $.param({ content1: combinedText, content2: oldQuestionHTML });
+			} else {
+                            formData = $('#my-form-1').serialize();
+                            var query = $('#input-box').val();
+                        }
+                        console.log("FormData: ", formData); // log the FormData sent to Ajax
+                        $.ajax({
+                            type: 'POST',
+                            url: '/',
+                            data: formData,
+			    beforeSend: function() {
+       				$('#processing-message').html('Response processing...<p>');
+        			$('#processing-message').show();
+    			        },
+                            success: function(response) {
+                                $('#processing-message').hide();
+			        $('#my-form-1')[0].reset(); // reset the form 
+                                var previousResponse = $('#response').html() + '<p>' + $('#previous-response').html();
+                                $('#previous-response').html(previousResponse);
+	                        $('#input-box').attr("placeholder", "Type query here.");
+                                if (query.startsWith('c: ')) {
+                                    query = 'Compare and contrast the following: ' + query.substring('c: '.length);
+                                }
+                                if (query.startsWith('m: ')) {
+                                    query = ''
+				    respondtoquestion="y";
+console.log(respondtoquestion);
+			            $('#input-box').attr("placeholder", "Type your answer here. You may give just the letter answer or also write your reasoning.");
+                                }
+                                var fullresponse = '<i>' + query + '</i><br>' + " " + response;
+                                $('#response').html(fullresponse);
+                            },
+                            error: function() {
+                                $('#processing-message').hide();
+                                $('#' + target).text('An error occurred while processing your request.');
+                            }
+                        });
+                    }
+                });
+            });
+
+
+    function toggle_visibility(id) {
+       event.preventDefault();
+       var e = document.getElementById(id);
+       if(e.style.display == 'none')
+          e.style.display = 'block';
+       else
+          e.style.display = 'none';
+    }
+
+    document.getElementById('input-box').focus();
+   
+    function updateTextareaRows() {
+    const textarea = document.getElementById('input-box');
+
+    if (window.innerWidth <= 768) {
+        textarea.setAttribute('rows', 5);
+    } else {
+        textarea.setAttribute('rows', 15);
+    }
+}
+
+// Call the function on page load
+updateTextareaRows();
+
+// Call the function on window resize
+window.addEventListener('resize', updateTextareaRows);
+
+    </script>
+</body>
+</html>
