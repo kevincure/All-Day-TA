@@ -16,6 +16,10 @@ import json
 import io
 # you need to pip install python-docx, not docx
 import docx
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt')
 
 
 # Set the desired chunk size and overlap size
