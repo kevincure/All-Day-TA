@@ -14,13 +14,14 @@ import pandas as pd
 import numpy as np
 import json
 import io
+import re
+from pptx import Presentation
 # you need to pip install python-docx, not docx
 import docx
 try:
     nltk.data.find('tokenizers/punkt')
 except LookupError:
     nltk.download('punkt')
-
 
 # Set the desired chunk size and overlap size
 # chunk_size is how many tokens we will take in each block of text
@@ -65,6 +66,18 @@ for filename in os.listdir(filedirectory):
         new_row = pd.DataFrame({"Title": [title], "Text": [text]})
         df = pd.concat([df, new_row], ignore_index=True)
 
+    elif filename.endswith(".ppt") or filename.endswith(".pptx"):
+        filepath = os.path.join(filedirectory, filename)
+        ppt = Presentation(filepath)
+        text = ''
+        for slide in ppt.slides:
+            for shape in slide.shapes:
+                if hasattr(shape, "text"):
+                    text += shape.text
+        title = os.path.splitext(filename)[0]  # Remove the file extension from the filename
+        new_row = pd.DataFrame({"Title": [title], "Text": [text]})
+        df = pd.concat([df, new_row], ignore_index=True)
+
     elif filename.endswith(".doc") or filename.endswith(".docx"):
         # Open the DOC/DOCX file in binary mode and read the raw data
         filepath = os.path.join(filedirectory, filename)
@@ -96,6 +109,32 @@ for filename in os.listdir(filedirectory):
         filepath = os.path.join(filedirectory, filename)
         with open(filepath, "r", encoding="utf-8") as file:
             text = file.read()
+
+        # Replace special characters
+        text = text.replace('\\$', '$')
+        text = text.replace('\\\\', '\n')  # Replace \\ with newline for paragraph breaks
+        # Remove comments
+        text = re.sub(r'%.*?\n', '', text)
+
+        def replace_math_expression(match):
+            # Remove $ or $$ signs but keep the expression
+            return match.group(1)
+
+        # Modified regular expression to match both $...$ and $$...$$
+        text= re.sub(r'\${1,2}(.*?)\${1,2}', replace_math_expression, text)
+
+        # Remove \begin{} ... \end{} blocks
+        text = re.sub(r'\\begin{.*?}.*?\\end{.*?}', '', text, flags=re.DOTALL)
+
+        # Remove common LaTeX commands
+        commands = [
+            r'\\textbf{.*?}', r'\\textit{.*?}', r'\\emph{.*?}', r'\\underline{.*?}',  # Formatting
+            r'\\cite{.*?}', r'\\ref{.*?}',  # References
+            r'\\label{.*?}',  # Labels
+            # Add more commands as needed
+        ]
+        for command in commands:
+            text = re.sub(command, '', text)
         
         # Add the text and title to the DataFrame
         title = os.path.splitext(filename)[0] # Remove the file extension from the filename
@@ -139,8 +178,3 @@ for filename in os.listdir(filedirectory):
     df_chunks.to_csv(output_file, encoding='utf-8', escapechar='\\', index=False)
 
     print("Saving " + filename)
-
-
-
-
-
