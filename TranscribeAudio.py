@@ -11,7 +11,7 @@ def read_settings(file_name):
             settings[key] = value
     return settings
 settings = read_settings("settings.txt")
-savename = settings["dataname"]
+savename = settings["filedirectory"]
 professor = settings["professor"]
 classname = settings["classname"]
 with open("APIkey.txt", "r") as f:
