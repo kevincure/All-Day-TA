@@ -15,6 +15,8 @@ import numpy as np
 import json
 import io
 import re
+import openai
+import shutil
 from pptx import Presentation
 # you need to pip install python-docx, not docx
 import docx
@@ -40,13 +42,23 @@ def read_settings(file_name):
     return settings
 settings = read_settings("settings.txt")
 filedirectory = settings["filedirectory"]
+classname = settings["classname"]
+professor = settings["professor"]
+assistants = settings["assistants"]
+classdescription = settings["classdescription"]
+assistant_name = settings['assistantname']
+instruct = settings['instructions']
+num_chunks = int(settings['num_chunks'])
+# get API_key
+with open("APIkey.txt", "r") as f:
+    openai.api_key = f.read().strip()
 # Check if the subfolder exists, if not, create it
 output_folder = "Textchunks"
 if not os.path.exists(output_folder):
     os.makedirs(output_folder)
 
 
-# Loop through all pdf, txt, tex in the "documents" folder
+# Loop through all pdf, txt, tex, ppt, pptx, in the "documents" folder
 for filename in os.listdir(filedirectory):
     # Create an empty DataFrame to store the text and title of each document
     df = pd.DataFrame(columns=["Title", "Text"])
@@ -141,8 +153,11 @@ for filename in os.listdir(filedirectory):
         new_row = pd.DataFrame({"Title": [title], "Text": [text]})
         df = pd.concat([df, new_row], ignore_index=True)
 
+    # Create summaries to append to each chunk of what this text is about
     # Loop through the rows and create overlapping chunks for each text
     chunks = []
+    summary_chunks = []
+    chunk_counter = 0
     for i, row in df.iterrows():
         # Tokenize the text for the current row
         tokens = nltk.word_tokenize(row['Text'])
@@ -152,12 +167,36 @@ for filename in os.listdir(filedirectory):
             # Get the start and end indices of the current chunk
             start = j
             end = j + chunk_size
+            # create summaries
+            if chunk_counter % 5 == 0:
+                # Define the extended chunk range
+                extended_start = max(0, start - 500)
+                extended_end = min(len(tokens), start + 500)
+                # Create the extended chunk
+                summary_chunks = ' '.join(tokens[extended_start:extended_end])
+                # Apply the summer function to the extended chunk and store the result
+                send_to_gpt = []
+                response = []
+                current_summary = []
+                instructions = "Consider this text from portion of a reading, transcript, slides or handout for " + classname + ", a " + classdescription + ".  Give a SHORT ONE SENTENCE summary of what this specific block of text is about, assuming the user already knows the document it comes from and the class is relates to. The format should be a list of NO MORE THAN THREE ideas covered in the block of text, likely for the only time in this class, separated by commas, like 'Context: ...' where again, the response is a SHORT ONE SENTENCE summary, such as 'Context: marginal costs applied to new firms, example of steel' or 'Context: melting point of steel, relation to aluminum, underlying atomic reason'"
+                send_to_gpt.append({"role": "system", "content": instructions})
+                send_to_gpt.append({"role": "user", "content": summary_chunks})
+                response = openai.ChatCompletion.create(
+                    messages=send_to_gpt,
+                    temperature=0.1,
+                    max_tokens=50,
+                    model="gpt-3.5-turbo"
+                )
+                current_summary = response["choices"][0]["message"]["content"]
+                print(current_summary)
+
+            chunk_counter += 1
 
             # Create the current chunk by joining the tokens within the start and end indices
             chunk = ' '.join(tokens[start:end])
 
             # Add the article title to the beginning of the chunk
-            chunk_with_title = "This text comes from the document " + row['Title'] + ". " + chunk
+            chunk_with_title = "Source: " + row['Title'] + ". " + current_summary + " " + chunk
 
             # Append the current chunk to the list of chunks, along with the corresponding title
             chunks.append([row['Title'], chunk_with_title])
@@ -178,3 +217,18 @@ for filename in os.listdir(filedirectory):
     df_chunks.to_csv(output_file, encoding='utf-8', escapechar='\\', index=False)
 
     print("Saving " + filename)
+
+# move files to old directory
+destination_directory = '../Already Chopped Documents'
+for filename in os.listdir(filedirectory):
+    source_path = os.path.join(filedirectory, filename)
+    destination_path = os.path.join(destination_directory, filename)
+
+    # Move the file to the destination directory
+    shutil.move(source_path, destination_path)
+print(f"Moved chopped documents to old directory")
+
+
+
+
+
