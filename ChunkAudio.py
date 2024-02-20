@@ -1,4 +1,4 @@
-# Run through all mp3, mp4, wav in "Raw Audio", chunk it up, and save the files as under 25MB in "Chunked Audio"
+# Runs through all mp3, mp4, wav in "Raw Audio", chunks them, and saves the files as under 25MB in "Chunked Audio"
 # Run this before you run "EmbedAudio"
 # You need ffmpeg installed for this to work
 # To install ffmpeg, you can follow the instructions given in the official documentation: https://ffmpeg.org/download.html

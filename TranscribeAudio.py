@@ -1,3 +1,5 @@
+# Uses Whisper to transcribe audio files (mp3, mp4 or wav)
+
 import os
 import openai
 from glob import glob
@@ -19,6 +21,7 @@ with open("APIkey.txt", "r") as f:
     
 model_id = "whisper-1"
 folder_path = 'Chunked Audio'
+os.makedirs('Transcriptions', exist_ok=True)
 
 def transcribe_audio(model_id, audio_file_path):
     with open(audio_file_path, 'rb') as media_file:
@@ -28,8 +31,6 @@ def transcribe_audio(model_id, audio_file_path):
             prompt=prompt_text
         )
     return response['text']
-
-os.makedirs('Transcriptions', exist_ok=True)
 
 file_extensions = ["*.mp3", "*.mp4", "*.wav"]
 files = []

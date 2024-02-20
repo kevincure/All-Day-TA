@@ -1,3 +1,6 @@
+# After chopping and embedding our text, this code creates a new concatenated dataframe
+# You need to run this every time you add new documents, after you Chop and Embed
+
 import os
 import pandas as pd
 import numpy as np
@@ -26,7 +29,6 @@ for csv_file, npy_file in zip(csv_files, npy_files):
         concatenated_npy = npy_data
     else:
         concatenated_npy = np.concatenate([concatenated_npy, npy_data], axis=0)
-
 
 # Save the concatenated data to the base folder
 concatenated_csv.to_csv("textchunks-originaltext.csv", encoding='utf-8', escapechar='\\', index=False)
