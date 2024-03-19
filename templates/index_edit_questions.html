@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville&display=swap" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Question Bank - {{ classname }}</title>
+
+    <style>
+        body {
+            background-color: #f5eae1;
+            margin: 0;
+            font-family: 'Libre Baskerville', serif;
+        }
+
+	.buttons-container {
+    	    display: flex;
+    	    justify-content: space-between; /* This will push the buttons to the left and right */
+	}
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4);
+        }
+
+        .modal-content {
+            background-color: #fefefe;
+            margin: 15% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+        }
+
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .close:hover,
+        .close:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .nav-controls {
+            display: none;
+            justify-content: center;
+            align-items: center;
+            color: black;
+            font-weight: bold;
+            font-size: 20px;
+            padding: 0px;
+            width: 100%;
+        }
+
+        .nav-controls button {
+            margin: 0 10px;
+            color: rgb(236, 4, 123);
+            font-size: 32px;
+            border: none;
+            background-color: transparent;
+            cursor: pointer;
+        }
+
+        .nav-controls button:disabled {
+            color: transparent;
+        }
+
+        .nav-controls button:hover {
+            background-color: #d5cac1;
+        }
+
+        .nav-controls button:disabled:hover {
+            background-color: transparent;
+        }
+
+        .nav-controls span {
+            font-weight: bold;
+        }
+
+        .secret {
+            display: none;
+            color: #999;
+            font-style: italic;
+        }
+
+        .options-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin: 0 auto;
+        }
+
+        .option-box {
+            background-color: #e5dad1;
+            color: black;
+            font-weight: bold;
+            font-size: 18px;
+            padding: 10px;
+            margin: 1px 5px;
+            cursor: pointer;
+            text-align: center;
+        }
+
+        .option-box:hover {
+            background-color: #d5cac1;
+        }
+
+        .title {
+            margin-top: 20px;
+            margin-bottom: 20px;
+            font-size: 20px;
+        }
+
+        .header-container {
+            display: flex;
+            justify-content: center;
+            padding: 10px;
+            width: 75%;
+            margin: 0 auto;
+        }
+
+        .header-container h1 {
+            font-size: 28px;
+            white-space: nowrap;
+            overflow: hidden;
+            color: rgb(236, 4, 123);
+        }
+
+        .option-box-active {
+            color: rgb(236, 4, 123);
+        }
+
+        .main-container {
+            display: flex;
+            justify-content: center;
+            width: 75%;
+            margin: 0 auto;
+            padding: 10px;
+        }
+
+        .container {
+            width: 100%;
+            text-align: left;
+        }
+
+        .responses {
+            width: 65%;
+            margin: 0 auto;
+        }
+
+        .response-button {
+            background-color: #E5DAD1;
+            color: black;
+            padding: 10px 20px;
+            margin: 5px 0;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+            outline: none;
+            display: block;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .response-button:hover {
+            background-color: #D5CAC1;
+        }
+
+        @media screen and (max-width: 768px) {
+    	    .main-container {
+            flex-direction: column;
+            align-items: center;
+            width: 95%;
+            padding: 10px;
+        }
+        .container,
+        .responses {
+            width: 100%;
+        }
+
+        .header-container {
+            width: 95%;
+        }
+        .header-container h1 {
+            font-size: calc(16px + 1vw); /* Slightly reduce font size growth to help fit on one line */
+            white-space: nowrap; /* Keeps the text on a single line */
+            overflow: hidden; /* Prevents text from flowing out of the container */
+            text-overflow: ellipsis; /* Adds an ellipsis to signify clipped text */
+            margin: 0 auto; /* Centering the header text if needed */
+            padding: 0;
+            width: 100%; /* Ensure the header takes full width of its container */
+        }
+    }
+    </style>
+</head>
+<body>
+    <div class="header-container">
+        <h1>Edit Question Bank - {{ classname }}</h1>
+    </div>
+    <div class="container">
+        <div id="optionsContainer" class="options-container"></div>
+    </div>
+    <div class="main-container">
+        <div class="responses">
+            <div class="nav-controls">
+                <button id="prevBtn"> &#x25C0; </button>
+                <span id="currentIndex"></span>
+                <button id="nextBtn"> &#x25B6; </button>
+            </div>
+	    <div class="buttons-container">
+                <button id="disableBtn" class="option-box" style="color: rgb(236, 4, 123);">Disable</button>
+                <button id="approveBtn" class="option-box" style="color: rgb(236, 4, 123);">Approve</button>
+            </div>
+            <div id="dataDisplay"></div>
+	</div>
+    </div>
+
+    <div id="myModal" class="modal">
+        <!-- Modal content -->
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <p id="modal-text">Text no one will ever see...</p>
+        </div>
+    </div>
+</body>
+
+
+<script>
+    let currentData = []; // To store the current set of rows
+    let currentIndex = 0; // To track the current row being displayed
+
+    function fetchData(selectedValue) {
+        fetch(`/get_data?selected_value=${encodeURIComponent(selectedValue)}`)
+            .then(response => response.json())
+            .then(data => {
+                currentData = data;
+                currentIndex = 0;
+                document.querySelector('.nav-controls').style.display = 'flex';
+                updateDisplay();
+            });
+    }
+
+    function updateDisplay() {
+        const totalQuestions = currentData.length;
+        const questionNumber = totalQuestions > 0 ? currentIndex + 1 : 0;
+
+        document.getElementById('nextBtn').style.color = ""; // Reset NextBtn color to default
+        document.getElementById('currentIndex').textContent = `Question ${questionNumber} of ${totalQuestions}`;
+
+        if (totalQuestions > 0) {
+            showRowData(currentData[currentIndex]);
+        } else {
+            document.getElementById('dataDisplay').innerHTML = "Temp Blank";
+        }
+
+        document.getElementById('prevBtn').disabled = currentIndex <= 0;
+        document.getElementById('nextBtn').disabled = currentIndex >= totalQuestions - 1;
+    }
+
+    document.getElementById('prevBtn').onclick = () => {
+        if (currentIndex > 0) {
+            currentIndex--;
+            updateDisplay();
+        }
+    };
+
+    document.getElementById('nextBtn').onclick = () => {
+        if (currentIndex < currentData.length - 1) {
+            currentIndex++;
+            updateDisplay();
+        }
+    };
+
+    var modal = document.getElementById("myModal");
+    var span = document.getElementsByClassName("close")[0];
+
+    span.onclick = function() {
+        modal.style.display = "none";
+    };
+
+    window.onclick = function(event) {
+        if (event.target == modal) {
+            modal.style.display = "none";
+        }
+    };
+
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]]; // Swap elements
+    }
+}
+
+
+function prepareAndShuffleAnswers(responses, explanations, correctAnswerIndex) {
+    // Combine answers with their explanations and mark the correct answer
+    let combined = responses.map((response, index) => ({
+        response,
+        explanation: explanations[index],
+        isCorrect: index === correctAnswerIndex // Mark the correct answer
+    }));
+
+    // Shuffle the combined array
+    shuffleArray(combined);
+
+    return combined; // This now includes shuffled responses with their explanations and correctness flag
+}
+
+
+function showRowData(row) {
+    const display = document.getElementById('dataDisplay');
+    display.innerHTML = '';
+
+    const titleDiv = document.createElement('div');
+    titleDiv.className = 'title';
+    titleDiv.textContent = row.title;
+    display.appendChild(titleDiv);
+
+    // Success and failure messages
+    const successMessages = ["You're right!", "Got it!", "That's correct!", "Exactly!", "Yup, that's it!"];
+    const failureMessages = ["Not quite.", "Try again.", "Nope, that's not it.", "Let's give it another shot.", "No, that's not right."];
+
+    // Assume combinedShuffled is already prepared with the correct 'isCorrect' flags
+    const combinedShuffled = prepareAndShuffleAnswers(row.responses, row.secret, 0);
+
+    combinedShuffled.forEach((item, index) => {
+        const button = document.createElement('button');
+        button.className = 'response-button';
+        button.textContent = `${item.response}`;
+
+        // Automatically color the correct answer button without needing a click
+        if (item.isCorrect) {
+            button.style.backgroundColor = "lightgreen"; // Directly apply the style
+        }
+
+        button.onclick = function() {
+            const modalText = document.getElementById("modal-text");
+
+            if (item.isCorrect) {
+                const successMessage = successMessages[Math.floor(Math.random() * successMessages.length)];
+                modalText.innerHTML = `${successMessage} <br><br> ${item.explanation}`;
+            } else {
+                const failureMessage = failureMessages[Math.floor(Math.random() * failureMessages.length)];
+                modalText.innerHTML = `${failureMessage} <br><br> ${item.explanation}`;
+            }
+            modal.style.display = "block";
+        };
+
+        display.appendChild(button);
+    });
+}
+
+
+    window.onload = function() {
+        fetch('/get_unique_values')
+            .then(response => response.json())
+            .then(data => {
+                const container = document.getElementById('optionsContainer');
+                let lastActiveBox = null;
+
+                data.forEach((value, index) => {
+                    const box = document.createElement('div');
+                    box.className = 'option-box';
+                    box.textContent = value;
+                    
+                    box.onclick = function() {
+                        if (lastActiveBox) {
+                            lastActiveBox.classList.remove('option-box-active');
+                        }
+                        this.classList.add('option-box-active');
+                        lastActiveBox = this;
+
+                        fetchData(value);
+                    };
+
+                    container.appendChild(box);
+
+                    if (index === 0) {
+                        box.click();
+                    }
+                });
+            });
+    };
+
+document.getElementById('disableBtn').onclick = function() {
+    // Assuming 'disableBtn' is correctly associated with the action
+    const originalIndex = currentData[currentIndex].original_index; // Ensure this is correctly set
+    
+    const disableData = { original_index: originalIndex };
+    
+    fetch('/disable_row', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(disableData),
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Refresh the page on success
+            window.location.reload();
+        }
+    })
+    .catch(error => {
+        console.error('Error disabling the row:', error);
+    });
+};
+
+
+document.getElementById('approveBtn').onclick = function() {
+    // Assuming 'approveBtn' is correctly associated with the action
+    const originalIndex = currentData[currentIndex].original_index; // Ensure this is correctly set
+    
+    const approveData = { original_index: originalIndex };
+    
+    fetch('/approve_row', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(approveData),
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Refresh the page on success
+            window.location.reload();
+        }
+    })
+    .catch(error => {
+        console.error('Error approving the row:', error);
+    });
+};
+
+
+</script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+Dockerfile
+README.md
+*.pyc
+*.pyo
+*.pyd
+__pycache__
+.pytest_cache
+Oldfiles
+Already Chopped Documents
+env
+index.html
+flagged
+Documents
+Textchunks
+Embedded Text
+transcriptions
+Raw Audio
+Chunked Audio
+run_AI.bat
+Full Text
+EditQuestionBank
+CreateQuestionBank
+

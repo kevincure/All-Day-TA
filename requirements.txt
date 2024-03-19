@@ -23,4 +23,4 @@ Werkzeug==2.2.3
 Flask-Cors==3.0.10
 Jinja2==3.1.2
 httpx==0.23.3
-requests==2.28.1
+

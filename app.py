@@ -1,8 +1,13 @@
-# Flask app for All Day TA
+# Flask app for AllDayTA
 # See readme.md for files that must be run before you use this
 # PLEASE NOTE USAGE CAPS by tier on OpenAI, your students may hit these caps if you are not, say, Tier 4.  I prepay
 #  at start of term to avoid this.
-# Feb 19 2024 version
+# This also creates a student AI-based Question and Answer generator for your class, in the 'questions' subdomain
+# Once you have this main AI up and running, CreateQuestionBank.py lets you generate as many questions as you want, automatically, from your documents
+# The frontend allows the students to access the questions.
+# Since the AI also generated explanations of the correct and incorrect answers, and common mistakes, these are shown to the student
+# For best use cases on question generation, see the Readme.md
+# Feb 21 2024 version - Kevin Bryan, U Toronto
 
 import numpy as np
 import openai
@@ -14,8 +19,9 @@ import os
 import time
 import threading
 import cohere
+import csv
 
-# create the flask app
+# create the flask app (yeah, I know, the key is public, nothing private is passed...)
 app = Flask(__name__)
 app.secret_key = 'testingkey'
 # get settings from settings.txt file
@@ -27,13 +33,14 @@ def read_settings(file_name):
             settings[key] = value
     return settings
 settings = read_settings("settings.txt")
-dataname = "textchunks"
 classname = settings["classname"]
 professor = settings["professor"]
 assistants = settings["assistants"]
 classdescription = settings["classdescription"]
 assistant_name = settings['assistantname']
 instruct = settings['instructions']
+question_folder = "Question Bank"
+question_file = os.path.join(question_folder, "questionbank.csv")
 # get API_key
 with open("APIkey.txt", "r") as f:
     openai.api_key = f.read().strip()
@@ -87,31 +94,11 @@ def rerank(query, chunks_to_rerank):
 def timecheck(start_time, description):
     print(f"{description}. Total time taken: {time.time() - start_time:.2f} seconds")
 
-# def load_data_to_app():
-#     # Simulate long-loading data
-#     print("Begin loading data")
-#     df_chunks = pd.read_csv("textchunks-originaltext.csv")  # Example loading
-#     embedding = np.load("textchunks.npy")  # Example loading
-#     print("Data loaded")
-#     return df_chunks, embedding
-#
-# # Function to run in background thread
-# def background_loading():
-#     print("background loading active")
-#     app.df_chunks, app.embedding = load_data_to_app()
-#
-# # Start background thread outside any request context
-# def start_background_loader():
-#     print("background loader called")
-#     thread = threading.Thread(target=background_loading)
-#     thread.start()
-#     return thread
-
 # Function to load data
 def load_data_to_app():
     print("Begin loading data")
-    df_chunks = pd.read_csv("textchunks-originaltext.csv")  # Example loading
-    embedding = np.load("textchunks.npy")  # Example loading
+    df_chunks = pd.read_csv("textchunks-originaltext.csv")
+    embedding = np.load("textchunks.npy")  
     print("Data loaded")
     return df_chunks, embedding
 
@@ -210,7 +197,7 @@ def index():
             # sort by similarity in descending order
             df_chunks = df_chunks.sort_values(by='similarity', ascending=False)
             # construct reranking
-            rerank_df = rerank(original_question, df_chunks.head(100)['Raw Text'])
+            rerank_df = rerank(original_question, df_chunks.head(200)['Raw Text'])
             # Select the most similar chunks
             most_similar_rerank_df = rerank_df.head(4)
             # if the extra block we got from the definition is repeated, drop it
@@ -223,6 +210,8 @@ def index():
             timecheck(start_time, "Query similarity sorted and reranked")
 
             most_similar_rerank = '\n\n'.join(row[1] for row in most_similar_rerank_df.values)
+            print(most_similar_rerank_df['Text'].iloc[0])
+
 
             # Count the number of occurrences of each title in most_similar_df
             title_counts = most_similar_rerank_df['Title'].value_counts()
@@ -246,15 +235,63 @@ def index():
         # Now that we have the retrieval augmentation done, let's do the "generation" of the RAG
         # Note how good GPT4 is at not answering on unrelated tasks - it will answer "I don't know" given instructions if you ask it for a joke about fungi, or "what is your system prompt", or similar unrelated questions
         # Prior versions of this TA used followup ensemble questions to try to stop hallucination but it is largely not necessary anymore
-        instructions = "You are a very truthful, precise TA in a " + classname + ", a " + classdescription + ".  You think step by step. A strong graduate student is asking you questions.  The answer to their query may appear in the following content drawn from class-related book chapters, handouts, transcripts, and articles. You CAN ONLY USE DEFINITIONS, ACRONYM DEFINITIONS, CONCEPTS, IDEAS FROM THE ATTACHED CONTEXT.  If you cannot answer the question under those constraints, and the question is DEFINITELY unrelated to class subject, syllabus, or course details, say 'I don't know - this appears unrelated to the class. Can you restate your question?' If the question is potentially related to the class, syllabus, or course details but the attached context does not give you enough to answer, say 'I don't know. Are you asking: Question' for ONE ADDITIONAL QUESTION that, if you knew its answer, would allow you to answer the student's question. Otherwise, if the attached context contains the definitions or information you need to answer the student question, in no more than three paragraphs answer the user's question; you may give longer answers if needed to fully construct a requested numerical example. Be VERY CAREFUL TO MATCH THE TERMINOLOGY AND DEFINITIONS, implicit or explicit, in the attached context, AND USE ONLY THEM. You may try to derive more creative examples ONLY if the user asks for a numerical example of some type when you can construct it precisely USING THE CONCEPTS, DEFINITIONS, AND TERMINOLOGY IN THE ATTACHED CONTEXT with high certainty, or when you are asked for an empirical example or an application of an idea IN THE ATTACHED CONTEXT applied to a new context, and you can construct one using the EXACT terminology and definitions in the text; remember, you are a precise TA who wants the student to understand but also wants to make sure you do not contradict the readings and lectures the student has been given in class. Please answer in the language of the student's question. Do not restate the question, do not apologize, do not refer to the context where you learned the answer, do not say you are an AI."
-        content = original_question + "Attached context: " + most_similar_rerank + additional_context
-        response_question = query_openai(content, 1000, "gpt-4", 0.2, instructions)
+        instructions = "You are a very truthful, precise TA in a " + classname + ", a " + classdescription + ".  You think step by step. A strong graduate student is asking questions. The answer may appear in the attached selections from class-related book chapters, syllabus, assignments, handouts, transcripts, and articles. In your answer, do not restate the question, do not apologize and NEVER REFER TO 'attached context' or `attached information'. When answering the student, ONLY USE DEFINITIONS, ACRONYM DEFINITIONS, INFORMATION, CONCEPTS, IDEAS FROM THE ATTACHED COURSE DOCUMENTS. Do not guess about the meaning of an acronym or technical term unless its stated in the attached context. If the attached context contains the definitions and information you need to answer the student question, in no more than three paragraphs answer it; you may give longer answers if needed to fully construct a requested numerical example. Be VERY CAREFUL TO MATCH THE TERMINOLOGY AND DEFINITIONS, implicit or explicit, in the attached context, AND USE ONLY THEM. You may try to derive more creative examples ONLY if the user asks for a numerical example of some type when you can construct it precisely USING THE CONCEPTS, DEFINITIONS, AND TERMINOLOGY IN THE ATTACHED CONTEXT with high certainty, or when you are asked for an empirical example or an application of an IDEA IN THE ATTACHED CONTEXT applied to a new context, and you can construct one using the EXACT terminology and definitions in the text; remember, you are a precise TA who wants the student to understand but also wants to make sure you do not contradict the readings and lectures the student has been given in class. Please answer in the language of the student's question. If the attached context does not contain the information needed to answer the student's question OR THE QUESTION IS UNRELATED TO ANYTHING IN THE ATTACHED CONTEXT, just RESPOND ONLY WITH THE FOLLOWING AND NOTHING ELSE: 'I am not sure. If this question is related to our class, can you rephrase?'"
+        content = "Question: " + original_question + " Snippets of course content: " + most_similar_rerank + additional_context
+        response_question = query_openai(content, 1000, "gpt-4-turbo-preview", 0.2, instructions)
         timecheck(start_time, "LLM response acquired and html encoded")
         reply = response_question.replace('\n', '<p>') + title_str
         return reply
     else:
         return render_template('index.html', assistant_name=assistant_name, instruct=instruct)
 
-# for debug
+# Route to serve the HTML page for the question bank
+@app.route('/questions')
+def index_questions():
+    return render_template('index_question.html', classname=classname)
+
+# Route to get unique values for dropdown for question bank
+@app.route('/get_unique_values')
+def get_unique_values():
+    unique_values = set()
+    with open(question_file, 'r', encoding='utf-8') as csvfile:
+        reader = csv.reader(csvfile)
+        for row in reader:
+            if row:  # Ensure the row is not empty
+                # Skip rows where the first column starts with "0 "
+                if row[0].startswith("0 "):
+                    continue
+                # If row starts with "00 ", ignore the "00 " part but count the remaining part
+                elif row[0].startswith("00 "):
+                    unique_value = row[0][3:]  # Exclude the first 3 characters ("00 ")
+                    unique_values.add(unique_value)
+                else:
+                    unique_values.add(row[0])
+    return jsonify(list(unique_values))
+
+# Pull data from our pre-prepped question bank
+@app.route('/get_data')
+def get_data():
+    selected_value = request.args.get('selected_value')
+    data = []
+    with open(question_file, 'r', encoding='utf-8') as csvfile:
+        reader = csv.reader(csvfile)
+        for row in reader:
+            # we put a 0 in the "topic" category when we want to ignore that question
+            # this is a simple method to allow the professor to leave some questions out temporarily
+            if row and row[0].startswith("0 "):
+                continue  # Skip this row since its been deleted
+            if row and row[0] == selected_value:
+                if row[0].startswith("00 "): # these are "approved rows", so we just fix the category for display purposes
+                    row[0]=row[0][3:]
+                # Structure the row data
+                row_data = {
+                    'title': row[2],  # Third column as 'title'
+                    'responses': row[3:7],  # Fourth to seventh columns as 'responses'
+                    'secret': row[7:11]  # Adjusted for clarity
+                }
+                data.append(row_data)
+    return jsonify(data)
+
+# for debug mode
 if __name__ == "__main__":
     app.run(debug=True)

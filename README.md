@@ -5,7 +5,7 @@ These instructions help you deploy your own custom TA for a university class, wh
 
 It will cost about 20 bucks and a couple hours of time to set up your content.  I highly recommend rewriting your syllabus to specifically list your assignments in order, to include a document with definitions and acronyms from your class, and to follow the instructions below on transcripts carefully.  You may want to consider adding documents with student Q&As where you gave particularly good answers, or documents full of example worked-out problems - that is, imagine the content you would need to give you TA and make sure the AI also has it!
 
-Cost-wise, on a running basis, the current system costs about 4.5 US cents per question.  We average roughly 50 questions per student per semester (with skew, of course), or $2.25.  Including training costs for a sufficiently large cost barely changes this figure.  And note: this cost will go down over time, and quality will go up.
+Cost-wise, on a running basis, the current system costs about 4.5 US cents per question.  We average roughly 50 questions per student per semester (with skew, of course), or $2.25.  Including training costs for a sufficiently large cost barely changes this figure.  And note: this cost will go down over time, and quality will go up. If you are cash-constrained, checked "gpt-4" to "gpt-4-turbo-preview" on the line "response_question = query_openai(content, 1000, "gpt-4", 0.2, instructions)" in app.py.  This results in a minor performance degrade, but cuts costs to 2.4 US cents per question.
 
 To make sure you understand how a system like this works, it's essentially a complex "RAG", or Retrieval Augmented Generation.  That is, it takes all of your documents, uses a bunch of pre- and post-processing tricks to find where in your documents the answer to a query might be, passes the most likely sources on to a very advanced LLM, then returns an answer.  The goal?  Give *more* precise answers than the internet/Google, then public LLMs, and than your TA, taking advantage of the fact that the system has access to reams of your own documents.  The more content you give this system, particularly content that you agree with, the better.
 
@@ -48,8 +48,15 @@ choco install ffmpeg
 # on Windows using Scoop (https://scoop.sh/)
 scoop install ffmpeg
 
+For Windows, this is three lines. 
+1) Open a Powershell console (type Powershell in the search bar on Windows if you don't know how to find it)
+2) type "Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser"
+3) Type A for all and press enter
+4) type "Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression"
+5) type "scoop install ffmpeg"
+
 5) Create your settings.  
-In your "virtual TA" folder, place all of your documents in the Documents subfolder. Open settings.txt in the main folder and edit.  I would leave the last two entries as is:
+In your "virtual TA" folder, place all of your documents in the Documents subfolder. Open settings.txt in the main folder and edit. 
 
 classname=Intermediate Football Theory
 professor=Rob Gronkowski and Tom Brady
@@ -66,15 +73,16 @@ classname is passed to the AI as a description of who it is act as a TA for.  pr
 
 8) Open a command window (cmd on Windows - if you use Mac or Linux, I will assume you can translate these instructions. If you aren't familiar with this, open it in Administrator Mode).  cd the directory to your virtual TA folder.  type "pip install -r requirements.txt" and hit enter.  This makes sure you have all the libraries you need.
 
-9) If you have audio to transcribe, place the raw mp4/mp3/wav audio files in the subfolder Raw Audio.  Run ChunkAudio 
-	In the command window, type "py ChunkAudio.py"
-This will separate your audio into five minute blocks - the whisper API will not transcribe files with a size larger than 25MB each.  Then run TranscribeAudio (
+9) If you have audio to transcribe, place the raw mp4/mp3/wav files in the subfolder Raw Audio.  You can put your video files here if you like - it will still work.  First, run the program PrepareAudio 
+	In the command window, from the base file directory, type "py PrepareAudio.py"
+This will take your audio and video and reduce its size to what's necessary for audio transcription.  
+Then run the program TranscribeAudio
 	In the command window, type "py TranscribeAudio.py"
 This will create high quality transcriptions of your audio using the Whisper API.  The "professor" and "classname" keys in the settings.txt file help ensure your name is transcribed correctly and that the class context is interpreted right.  It will take roughly 3 minutes per hour of audio, and costs 36 cents per hour of audio. 
 
-10) If you transcribed audio, go into the "transcriptions" folder and look at each of the large text files ending with concatenated_transcript.txt.  These are the full transcripts of each of your original audio files. I give a quick glance and delete any intro/outro/homework discussion plus any students names from people I may have called on.  Give it a quick scan and also make sure any technical terms or similar don't need to be cleaned up.  Once you are happy, cut and paste these "concatenated_transcript" files into the Documents subfolder.  You can delete everything else in the folder transcriptions at this point if you like.
+10) If you transcribed audio, go into the "transcriptions" folder and look over each file.  These are the full transcripts of each of your original audio files. I give a quick glance and delete any intro/outro/homework discussion plus any students names from people I may have called on.  Give it a quick scan and also make sure any technical terms or similar don't need to be cleaned up.  Once you are happy, cut and paste these transcript files into the Documents subfolder.  You can delete everything else in the folder transcriptions at this point if you like.
 
-11) Place all of the your other txt, doc, pdf, tex, docx, ppt, pptx files in the Documents subfolder as well.
+11) Place all of your other txt, doc, pdf, tex, docx, ppt, pptx files in the Documents subfolder as well.  On your syllabus or other files where data is in tables or setups where the order isn't obvious, it may be worth a short edit to make it "machine readable" - the AI will only see the txt, not how it is organized on a page, so consider this when thinking about whether, say, assignment dates or similar will be found if you don't have that visual structure. 
 
 12) For any files that are locked, such as certain PDFs, you will need to extract the text yourself. One way to check is to open the pdf, select some txt, and to copy and paste it - if the copy/paste doesn't work, then your file won't open correctly. There are many ways to do this - e.g., print it and then scan it to OCR, and save the resulting text to a .txt file.  Unlocked doc, docx, txt, tex, ppt, pptx files should be fine unless they are saved in a crazy character set. I haven't had this issue come up yet. 
 
@@ -115,3 +123,5 @@ You will be asked to name your service - it doesn't matter as long as it is all 
 18) Now you should be good - click on your link from above and play around with it! Any time you want to add new content, just put the new documents in the same documents folder you originally used, run ChopDocuments and EmbedDocuments again, and redeploy as in step 17.  The code automatically adds your new documents to the already-embedded text so you only have to pay for embeddings once.
 
 19) What if you have two classes you want to use this tool for?  Just create a second root folder and do everything else as above!  You'll wind up with a second deployed app custom for your second class.
+
+20) There is also code to create an automated Question Bank.  Updates to this Q&A to handle that case coming shortly.
