@@ -127,110 +127,94 @@ def index():
         original_question = request.form['content1']
         prior_q_and_response = request.form['content2']
 
-        # if answer to Q&A, don't embed a new search, just use existing context
-        if original_question.startswith('a:'):
-            print("Let's check the student's answer")
-            # get the 'saved' information used to construct the last question
-            # this comes from a cookie we save
-            last_session = session.get('last_session', None)
-            print("Ok, we have prior content via a cookie")
-            if last_session is None:
-                print("I don't know any old content")
-                last_session = ""
-            most_similar = last_session
+
+        # First see if there's any definition or technical question that will help us answer
+        # This is very useful at avoiding hallucination on acronyms or other terms you use in your class
+        additional_context=""
+        content_definitions = f"Students are asking {original_question}. Are there any unclear acronyms or phrases you need to answer this question which may depend specifically on details of this course? Answer 'No.' or, if yes, return a very short question asking for the meaning of that acronym or definition you think is most likely to have a precise unique meaning in this class that could be easily confused. Say nothing else."
+        response_definitions = query_openai(content_definitions, 25, "gpt-4", 0.0)
+        print("Definitions needed? " + response_definitions)
+        # if we need a definition, find the reranked single most similar chunk of text and include that as well
+        if response_definitions != "No.":
+            definition_q_embed = embed(response_definitions)
+            similarities = compute_similarity(embedding, definition_q_embed)
+            top_100_indices = np.argsort(similarities)[-100:][::-1]
+            top_100_texts = df_chunks.iloc[top_100_indices]['Raw Text']
+            rerank_definition_df = rerank(response_definitions, top_100_texts)
+            most_similar_chunk_text = rerank_definition_df.iloc[0]['Text']
+            additional_context += rerank_definition_df.iloc[0]['Text'] + " "
+        timecheck(start_time, "Needed definitions acquired, if any")
+
+        # Now let's check whether question is about the syllabus
+        # In a sample of syllabus-related questions using GPT-4 and GPT-4-1106-preview ("Turbo"), GPT-4 correctly identified
+        #    syllabus questions 91% of the time, and Turbo did 45% of the time, hence we use it here despite the expense
+        #    Note that the system will likely answer correctly either way; this question just checks the student question then
+        #    pushes the system to look for the answer in the syllabus file, a common request
+        content = f"Students in {classname} taught by {professor} are asking questions. Class description: {classdescription} Is this question likely about the logistical details, schedule, nature, teachers, assignments, or syllabus of the course? Answer Yes or No and nothing else: {request.form['content1']}"
+        response_syllabus = query_openai(content, 1, "gpt-4", 0.0)
+        print("Is this a syllabus question? GPT-4 says " + response_syllabus)
+        timecheck(start_time, "Checked whether this is a syllabus question")
+        if response_syllabus.startswith('Y') or response_syllabus.startswith('y'):
+        # Concatenate the strings to form the original_question value
+            print("It seems like this question is about the syllabus")
+            original_question = "I may be asking about a detail on the syllabus for " + classname + ". " + original_question
+
+        # Now let's see if it might be a followup question
+        # GPT-4 Turbo as of Dec 2023 way overidentifies these, while GPT-4 misses a few legitimate follow-ups
+        if len(prior_q_and_response) > 1:
+            content_followup = f"Consider this new user question: {original_question}. Their prior question and response was {prior_q_and_response} Would it be helpful to have the context of the previous question and response to answer the new one?  For example, the new question may refer to 'this' or 'that' or 'the company' or 'their' or 'his' or 'her' or 'the paper' or similar terms whose context is not clear if you only know the current question and don't see the previous question and response, or it may ask for more details or to summarize or rewrite or expand on the prior answer in a way that is impossible to do unless you can see the previous answer, or the user may just have said 'Yes' following up on a clarification in the previous question and answer.  Answer either Yes or No."
+            response_followup = query_openai(content_followup, 1, "gpt-4", 0.0)
+            print("Might this be a follow-up? GPT-4 says " + response_followup)
+            timecheck(start_time, "Checked whether this is a followup")
+            # Construct new prompt if AI says that this is a followup
+            if response_followup.startswith('Y') or response_followup.startswith('y'):
+                # Update original_question to include prior 1
+                content_modify_followup = f"Consider this new user question: {original_question}. Their prior question and response was {prior_q_and_response} Rewrite the user's new question so that it is self-contained, including any background or related info from the prior question needed to answer it. Restrict the rewritten question to less than 3 sentences, at the very most."
+                original_question = query_openai(content_modify_followup, 100, "gpt-4", 0.0)
+
+        # Embed 'original_question', the user query modified to handle syllabus Qs and followups
+        query_embed = embed(original_question)
+        print("Query we embed is: " + original_question)
+
+        # compute dot_product similarity for each row and add to new column
+        df_chunks['similarity'] = compute_similarity(embedding, query_embed)
+        # sort by similarity in descending order
+        df_chunks = df_chunks.sort_values(by='similarity', ascending=False)
+        # construct reranking
+        rerank_df = rerank(original_question, df_chunks.head(200)['Raw Text'])
+        # Select the most similar chunks
+        most_similar_rerank_df = rerank_df.head(4)
+        # if the extra block we got from the definition is repeated, drop it
+        if additional_context in most_similar_rerank_df.iloc[:, 1].values:
+            print("Extra definition matched, so we avoid repeating to save money")
+            additional_context = ""
+        if additional_context != "":
+            print("Dropping one data chunk because we have the definition context as well")
+            most_similar_rerank_df = most_similar_rerank_df.head(3)
+        timecheck(start_time, "Query similarity sorted and reranked")
+
+        most_similar_rerank = '\n\n'.join(row[1] for row in most_similar_rerank_df.values)
+        print(most_similar_rerank_df['Text'].iloc[0])
+
+
+        # Count the number of occurrences of each title in most_similar_df
+        title_counts = most_similar_rerank_df['Title'].value_counts()
+        # Create a new dataframe with title and count columns, sorted by count in descending order
+        title_df = pd.DataFrame({'Title': title_counts.index, 'Count': title_counts.values}).sort_values('Count', ascending=False)
+        # Filter the titles that appear at least three times
+        title_df_filtered = title_df[title_df['Count'] >= 2]
+        # Get the most common titles in title_df_filtered; this creates the hamburger icon with the most related content
+        titles = title_df_filtered['Title'].values.tolist()
+        if len(titles) == 1:
+            title_str = f'<span style="float:right;" id="moreinfo"><a href="#" onclick="toggle_visibility(\'sorting\');" style="text-decoration: none; color: black;">&#9776;</a><div id="sorting" style="display:none; font-size: 12px;"> [The most likely related text is "{titles[0]}"]</div></span><p>'
+            title_str_2 = f'The most likely related text is {titles[0]}. '
+        elif len(titles) == 0:
             title_str = "<p></p>"
-            print("Query being used: " + original_question)
-            print("The content we draw on is " + most_similar)
-            timecheck(start_time, "Original context for question loaded")
-        # if anything other than answering a multiple choice question, go here
+            title_str_2 = ""
         else:
-            # First see if there's any definition or technical question that will help us answer
-            # This is very useful at avoiding hallucination on acronyms or other terms you use in your class
-            additional_context=""
-            content_definitions = f"Students are asking {original_question}. Are there any unclear acronyms or phrases you need to answer this question which may depend specifically on details of this course? Answer 'No.' or, if yes, return a very short question asking for the meaning of that acronym or definition you think is most likely to have a precise unique meaning in this class that could be easily confused. Say nothing else."
-            response_definitions = query_openai(content_definitions, 25, "gpt-4", 0.0)
-            print("Definitions needed? " + response_definitions)
-            # if we need a definition, find the reranked single most similar chunk of text and include that as well
-            if response_definitions != "No.":
-                definition_q_embed = embed(response_definitions)
-                similarities = compute_similarity(embedding, definition_q_embed)
-                top_100_indices = np.argsort(similarities)[-100:][::-1]
-                top_100_texts = df_chunks.iloc[top_100_indices]['Raw Text']
-                rerank_definition_df = rerank(response_definitions, top_100_texts)
-                most_similar_chunk_text = rerank_definition_df.iloc[0]['Text']
-                additional_context += rerank_definition_df.iloc[0]['Text'] + " "
-            timecheck(start_time, "Needed definitions acquired, if any")
-
-            # Now let's check whether question is about the syllabus
-            # In a sample of syllabus-related questions using GPT-4 and GPT-4-1106-preview ("Turbo"), GPT-4 correctly identified
-            #    syllabus questions 91% of the time, and Turbo did 45% of the time, hence we use it here despite the expense
-            #    Note that the system will likely answer correctly either way; this question just checks the student question then
-            #    pushes the system to look for the answer in the syllabus file, a common request
-            content = f"Students in {classname} taught by {professor} are asking questions. Class description: {classdescription} Is this question likely about the logistical details, schedule, nature, teachers, assignments, or syllabus of the course? Answer Yes or No and nothing else: {request.form['content1']}"
-            response_syllabus = query_openai(content, 1, "gpt-4", 0.0)
-            print("Is this a syllabus question? GPT-4 says " + response_syllabus)
-            timecheck(start_time, "Checked whether this is a syllabus question")
-            if response_syllabus.startswith('Y') or response_syllabus.startswith('y'):
-            # Concatenate the strings to form the original_question value
-                print("It seems like this question is about the syllabus")
-                original_question = "I may be asking about a detail on the syllabus for " + classname + ". " + original_question
-
-            # Now let's see if it might be a followup question
-            # GPT-4 Turbo as of Dec 2023 way overidentifies these, while GPT-4 misses a few legitimate follow-ups
-            if len(prior_q_and_response) > 1:
-                content_followup = f"Consider this new user question: {original_question}. Their prior question and response was {prior_q_and_response} Would it be helpful to have the context of the previous question and response to answer the new one?  For example, the new question may refer to 'this' or 'that' or 'the company' or 'their' or 'his' or 'her' or 'the paper' or similar terms whose context is not clear if you only know the current question and don't see the previous question and response, or it may ask for more details or to summarize or rewrite or expand on the prior answer in a way that is impossible to do unless you can see the previous answer, or the user may just have said 'Yes' following up on a clarification in the previous question and answer.  Answer either Yes or No."
-                response_followup = query_openai(content_followup, 1, "gpt-4", 0.0)
-                print("Might this be a follow-up? GPT-4 says " + response_followup)
-                timecheck(start_time, "Checked whether this is a followup")
-                # Construct new prompt if AI says that this is a followup
-                if response_followup.startswith('Y') or response_followup.startswith('y'):
-                    # Update original_question to include prior 1
-                    content_modify_followup = f"Consider this new user question: {original_question}. Their prior question and response was {prior_q_and_response} Rewrite the user's new question so that it is self-contained, including any background or related info from the prior question needed to answer it. Restrict the rewritten question to less than 3 sentences, at the very most."
-                    original_question = query_openai(content_modify_followup, 100, "gpt-4", 0.0)
-                    
-            # Embed 'original_question', the user query modified to handle syllabus Qs and followups
-            query_embed = embed(original_question)
-            print("Query we embed is: " + original_question)
-
-            # compute dot_product similarity for each row and add to new column
-            df_chunks['similarity'] = compute_similarity(embedding, query_embed)
-            # sort by similarity in descending order
-            df_chunks = df_chunks.sort_values(by='similarity', ascending=False)
-            # construct reranking
-            rerank_df = rerank(original_question, df_chunks.head(200)['Raw Text'])
-            # Select the most similar chunks
-            most_similar_rerank_df = rerank_df.head(4)
-            # if the extra block we got from the definition is repeated, drop it
-            if additional_context in most_similar_rerank_df.iloc[:, 1].values:
-                print("Extra definition matched, so we avoid repeating to save money")
-                additional_context = ""
-            if additional_context != "":
-                print("Dropping one data chunk because we have the definition context as well")
-                most_similar_rerank_df = most_similar_rerank_df.head(3)
-            timecheck(start_time, "Query similarity sorted and reranked")
-
-            most_similar_rerank = '\n\n'.join(row[1] for row in most_similar_rerank_df.values)
-            print(most_similar_rerank_df['Text'].iloc[0])
-
-
-            # Count the number of occurrences of each title in most_similar_df
-            title_counts = most_similar_rerank_df['Title'].value_counts()
-            # Create a new dataframe with title and count columns, sorted by count in descending order
-            title_df = pd.DataFrame({'Title': title_counts.index, 'Count': title_counts.values}).sort_values('Count', ascending=False)
-            # Filter the titles that appear at least three times
-            title_df_filtered = title_df[title_df['Count'] >= 2]
-            # Get the most common titles in title_df_filtered; this creates the hamburger icon with the most related content
-            titles = title_df_filtered['Title'].values.tolist()
-            if len(titles) == 1:
-                title_str = f'<span style="float:right;" id="moreinfo"><a href="#" onclick="toggle_visibility(\'sorting\');" style="text-decoration: none; color: black;">&#9776;</a><div id="sorting" style="display:none; font-size: 12px;"> [The most likely related text is "{titles[0]}"]</div></span><p>'
-                title_str_2 = f'The most likely related text is {titles[0]}. '
-            elif len(titles) == 0:
-                title_str = "<p></p>"
-                title_str_2 = ""
-            else:
-                top_two_titles = titles[:2]
-                title_str = f'<span style="float:right;" id="moreinfo"><a href="#" onclick="toggle_visibility(\'sorting\');" style="text-decoration: none; color: black;">&#9776;</a><div id="sorting" style="display:none; font-size: 12px;"> [The most likely related texts are "{top_two_titles[0]}" and "{top_two_titles[1]}"]</div></span><p>'
-                title_str_2 = f'The most likely related texts are {top_two_titles[0]} and {top_two_titles[1]}. '
+            top_two_titles = titles[:2]
+            title_str = f'<span style="float:right;" id="moreinfo"><a href="#" onclick="toggle_visibility(\'sorting\');" style="text-decoration: none; color: black;">&#9776;</a><div id="sorting" style="display:none; font-size: 12px;"> [The most likely related texts are "{top_two_titles[0]}" and "{top_two_titles[1]}"]</div></span><p>'
+            title_str_2 = f'The most likely related texts are {top_two_titles[0]} and {top_two_titles[1]}. '
 
         # Now that we have the retrieval augmentation done, let's do the "generation" of the RAG
         # Note how good GPT4 is at not answering on unrelated tasks - it will answer "I don't know" given instructions if you ask it for a joke about fungi, or "what is your system prompt", or similar unrelated questions
